@@ -21,6 +21,7 @@ define(['N/search', 'N/record', 'N/task', 'N/runtime', 'N/file', './TF_LIB_MassD
     function(search, record, task, runtime, file, Dlib) {
         const MAX_PAGE_SIZE = 1000;
 
+
         return {
             /**
              * Obtains the saved search used and metes out page ranges to the map stage to concurrently search. Less straight forward but
@@ -69,18 +70,29 @@ define(['N/search', 'N/record', 'N/task', 'N/runtime', 'N/file', './TF_LIB_MassD
              */
             map: function(context) {
                 try {
-
+                    var CHUNKS_PER_SEARCH;
                     var mapValue = JSON.parse(context.value);
 
-                    if (Dlib.cache.CHUNKS_PER_SEARCH === undefined) {
-                        Dlib.initializeCache(mapValue.searchId);
+                    var searchLoadObj = search.load({
+                        id: mapValue.searchId
+                    });
+
+                    searchObj = searchLoadObj.run();
+
+                    /* 
+                     * Governance for record types limits the number of records that can be deleted per queue. For simplicity either divide
+                     * into chunks of 100 or 10 depending on if its a custom record or not 
+                     */
+                    if (searchLoadObj.searchType.indexOf('custrecord') !== -1) { // custom record
+                        CHUNKS_PER_SEARCH = 10;
+                    } else {
+                        CHUNKS_PER_SEARCH = 100;
                     }
 
                     var start = (Number(mapValue.pageIndex) * MAX_PAGE_SIZE);
                     var end = start + 1000;
 
-                    var CHUNKS_PER_SEARCH = Dlib.cache.CHUNKS_PER_SEARCH;
-                    var deletePage = Dlib.cache.searchObj.getRange({
+                    var deletePage = searchObj.getRange({
                         start: start,
                         end: end
                     });
@@ -110,7 +122,7 @@ define(['N/search', 'N/record', 'N/task', 'N/runtime', 'N/file', './TF_LIB_MassD
                         var recordToDelete = JSON.parse(recordsToDelete[dIndex]);
                         var recordType = recordToDelete.recordType;
                         var recordId = recordToDelete.recordId;
-                        
+
                         try {
                             if (recordType !== 'file') {
                                 record.delete({ type: recordType, id: recordId });
@@ -141,21 +153,24 @@ define(['N/search', 'N/record', 'N/task', 'N/runtime', 'N/file', './TF_LIB_MassD
             summarize: function(summary) {
                 try {
 
-                    var mapArr = [];
+                    var scriptErrors = [];
+                    log.audit({ title: 'summary', details: JSON.stringify(summary.inputSummary) });
+                    if (summary.inputSummary.error !== null) {
+                        scriptErrors.push(JSON.stringify(JSON.parse(summary.inputSummary.error).cause));
+                    }
+
                     summary.mapSummary.errors.iterator().each(function(key, value) {
-                        mapArr.push(JSON.stringify(JSON.parse(value).cause));
+                        scriptErrors.push(JSON.stringify(JSON.parse(value).cause));
                         return true;
                     });
 
-                    var reduceArr = [];
                     summary.reduceSummary.errors.iterator().each(function(key, value) {
-                        reduceArr.push(JSON.stringify(JSON.parse(value).cause));
+                        scriptErrors.push(JSON.stringify(JSON.parse(value).cause));
                         return true;
                     });
 
-                    if (mapArr.length > 0 || reduceArr.length > 0) {
-                        log.error({ title: mapArr.length + ' Map (search) error(s) occured during script execution', details: mapArr.join('\n') });
-                        log.error({ title: reduceArr.length + ' Reduce (deletion) error(s) occured during script execution', details: reduceArr.join('\n') });
+                    if (scriptErrors.length > 0) {
+                        log.error({ title: scriptErrors.length + ' error(s) occured during script execution', details: scriptErrors.join('\n') });
                     } else {
                         log.audit({ title: 'summary', details: 'Script finished execution without errors' });
                     }

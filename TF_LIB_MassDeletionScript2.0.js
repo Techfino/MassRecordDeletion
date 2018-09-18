@@ -19,32 +19,6 @@
 define(['N/record', 'N/search', 'N/runtime'],
     function(record, search, runtime) {
         const MAX_PAGE_SIZE = 1000;
-        // With small inputs this is shared and can be leveraged to cache things such as the search object
-        var cache = {};
-
-        /**
-         * Stores the nlobjSearchObject and constants in the module itself to improve performance slightly as each
-         * instance will have access to the cached value until the module is refreshed
-         * @param  {nlobjSearchObject} searchObj A NetSuite saved search object
-         * @return {void}               
-         */
-        function initializeCache(savedSearchId) {
-            var searchObj = search.load({
-                id: savedSearchId
-            });
-
-            cache.searchObj = searchObj.run();
-
-           /* 
-            * Governance for record types limits the number of records that can be deleted per queue. For simplicity either divide
-            * into chunks of 100 or 10 depending on if its a custom record or not 
-            */
-           if (searchObj.searchType.indexOf('custrecord') !== -1) { // custom record
-                cache.CHUNKS_PER_SEARCH = 10;
-            } else {
-            	cache.CHUNKS_PER_SEARCH = 100;
-            }
-        } 
 
         /**
          * Adds sorting to a search to reduce chances that paged data has incorrect results. Non sorted paged data can have
@@ -99,9 +73,7 @@ define(['N/record', 'N/search', 'N/runtime'],
         }
 
         return {
-            cache: cache,
             defect474626Fix: defect474626Fix,
-            getErrorDetails: getErrorDetails,
-            initializeCache: initializeCache,
+            getErrorDetails: getErrorDetails
         };
     });
